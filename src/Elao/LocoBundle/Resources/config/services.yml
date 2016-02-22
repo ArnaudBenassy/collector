@@ -1,0 +1,10 @@
+services:
+  loco.handler:
+      class: 'Elao\LocoBundle\Loco\Handler'
+      arguments: [ %loco.configuration% ]
+
+  loco.data_collector.translation:
+      class: 'Symfony\Component\Translation\DataCollector\TranslationDataCollector'
+      arguments: ['@translator.data_collector']
+      tags:
+          - { name: 'data_collector', template: "@LocoBundle/Resources/views/profiler/translation.html.twig", id: "translation", priority: 200 }

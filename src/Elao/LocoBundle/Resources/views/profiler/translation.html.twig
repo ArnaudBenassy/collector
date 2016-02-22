@@ -1,0 +1,287 @@
+{% extends '@WebProfiler/Profiler/layout.html.twig' %}
+
+{% import _self as helper %}
+
+{% block toolbar %}
+    {% if collector.messages|length %}
+        {% set icon %}
+            {{ include('@WebProfiler/Icon/translation.svg') }}
+            {% set status_color = collector.countMissings ? 'red' : collector.countFallbacks ? 'yellow' %}
+            {% set error_count = collector.countMissings + collector.countFallbacks %}
+            <span class="sf-toolbar-value">{{ error_count ?: collector.countdefines }}</span>
+        {% endset %}
+
+        {% set text %}
+            <div class="sf-toolbar-info-piece">
+                <b>Missing messages</b>
+                <span class="sf-toolbar-status sf-toolbar-status-{{ collector.countMissings ? 'red' }}">
+                    {{ collector.countMissings }}
+                </span>
+            </div>
+
+            <div class="sf-toolbar-info-piece">
+                <b>Fallback messages</b>
+                <span class="sf-toolbar-status sf-toolbar-status-{{ collector.countFallbacks ? 'yellow' }}">
+                    {{ collector.countFallbacks }}
+                </span>
+            </div>
+
+            <div class="sf-toolbar-info-piece">
+                <b>Defined messages</b>
+                <span class="sf-toolbar-status">{{ collector.countdefines }}</span>
+            </div>
+        {% endset %}
+
+        {{ include('@WebProfiler/Profiler/toolbar_item.html.twig', { link: profiler_url, status: status_color }) }}
+    {% endif %}
+{% endblock %}
+
+{% block menu %}
+    <span class="label label-status-{{ collector.countMissings ? 'error' : collector.countFallbacks ? 'warning' }} {{ collector.messages is empty ? 'disabled' }}">
+        <span class="icon">{{ include('@WebProfiler/Icon/translation.svg') }}</span>
+        <strong>Translation</strong>
+        {% if collector.countMissings or collector.countFallbacks %}
+            {% set error_count = collector.countMissings + collector.countFallbacks %}
+            <span class="count">
+                <span>{{ error_count }}</span>
+            </span>
+        {% endif %}
+    </span>
+{% endblock %}
+
+{% block panel %}
+    {% if collector.messages is empty %}
+        <h2>Translations</h2>
+        <div class="empty">
+            <p>No translations have been called.</p>
+        </div>
+    {% else %}
+        {{ block('panelContent') }}
+    {% endif %}
+{% endblock %}
+
+{% block panelContent %}
+    <h2>Translation Metrics</h2>
+
+    <div class="metrics">
+        <div class="metric">
+            <span class="value">{{ collector.countdefines }}</span>
+            <span class="label">Defined messages</span>
+        </div>
+
+        <div class="metric">
+            <span class="value">{{ collector.countFallbacks }}</span>
+            <span class="label">Fallback messages</span>
+        </div>
+
+        <div class="metric">
+            <span class="value">{{ collector.countMissings }}</span>
+            <span class="label">Missing messages</span>
+        </div>
+    </div>
+
+    <h2>Translation Messages</h2>
+
+    {# sort translation messages in groups #}
+    {% set messages_defined, messages_missing, messages_fallback = [], [], [] %}
+    {% for message in collector.messages %}
+        {% if message.state == constant('Symfony\\Component\\Translation\\DataCollectorTranslator::MESSAGE_DEFINED') %}
+            {% set messages_defined = messages_defined|merge([message]) %}
+        {% elseif message.state == constant('Symfony\\Component\\Translation\\DataCollectorTranslator::MESSAGE_MISSING') %}
+            {% set messages_missing = messages_missing|merge([message]) %}
+        {% elseif message.state == constant('Symfony\\Component\\Translation\\DataCollectorTranslator::MESSAGE_EQUALS_FALLBACK') %}
+            {% set messages_fallback = messages_fallback|merge([message]) %}
+        {% endif %}
+    {% endfor %}
+
+    <div class="sf-tabs">
+        <div class="tab">
+            <h3 class="tab-title">Defined <span class="badge">{{ messages_defined|length }}</span></h3>
+
+            <div class="tab-content">
+                <p class="help">
+                    These messages are correctly translated into the given locale.
+                </p>
+
+                {% if messages_defined is empty %}
+                    <div class="empty">
+                        <p>None of the used translation messages are defined for the given locale.</p>
+                    </div>
+                {% else %}
+                    {{ helper.render_table(messages_defined) }}
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="tab">
+            <h3 class="tab-title">Fallback <span class="badge">{{ messages_fallback|length }}</span></h3>
+
+            <div class="tab-content">
+                <p class="help">
+                    These messages are not available for the given locale
+                    but Symfony found them in the fallback locale catalog.
+                </p>
+
+                {% if messages_fallback is empty %}
+                    <div class="empty">
+                        <p>No fallback translation messages were used.</p>
+                    </div>
+                {% else %}
+                    {{ helper.render_table(messages_fallback) }}
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="tab">
+            <h3 class="tab-title">Missing <span class="badge">{{ messages_missing|length }}</span></h3>
+
+            <div class="tab-content">
+                <p class="help">
+                    These messages are not available for the given locale and cannot
+                    be found in the fallback locales. Add them to the translation
+                    catalogue to avoid Symfony outputting untranslated contents.
+                </p>
+
+                {% if messages_missing is empty %}
+                    <div class="empty">
+                        <p>There are no messages of this category.</p>
+                    </div>
+                {% else %}
+                    {{ helper.render_missing_table(messages_missing, token) }}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% macro render_missing_table(messages, token) %}
+<form action="{{ path('_profiler_save_translations', {'token': token}) }}" method="post"
+      id="translations-list" onsubmit="javascript:saveTranslations(this);return false;" >
+
+    {{ _self.render_table(messages, true) }}
+
+    <div id="translationResult">
+        <button type="submit" class="sf-button">
+            <span class="border-l">
+                <span class="border-r">
+                    <span class="btn-bg">Add selected translations to catalogs</span>
+                </span>
+            </span>
+        </button>
+    </div>
+</form>
+<script type="text/javascript">
+    function openParameters(link) {
+        "use strict";
+
+        var imgs = link.children,
+                target = link.getAttribute('data-target-id');
+
+        Sfjs.toggle(target, imgs[0], imgs[1]);
+    };
+
+    var serializeQueryString = function(obj, prefix) {
+        var str = [];
+        for(var p in obj) {
+            if (obj.hasOwnProperty(p)) {
+                var k = prefix ? prefix + "[" + p + "]" : p, v = obj[p];
+                str.push(typeof v == "object" ? serializeQueryString(v, k) : encodeURIComponent(k) + "=" + encodeURIComponent(v));
+            }
+        }
+        return str.join("&");
+    };
+
+    // We need to hack a bit Sfjs.request because it does not support POST requests
+    // May not work for ActiveXObject('Microsoft.XMLHTTP'); :(
+    (function(open) {
+        XMLHttpRequest.prototype.open = function(method, url, async, user, pass) {
+            open.call(this, method, url, async, user, pass);
+            if (method.toLowerCase() === 'post') {
+                this.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+            }
+        };
+    })(XMLHttpRequest.prototype.open);
+
+    var saveTranslations = function(form) {
+        "use strict";
+        var inputs = form.translationKey;
+        var selected = [];
+        if (!inputs.value) {
+            for (var val in inputs) {
+                if (inputs.hasOwnProperty(val) && inputs[val].value) {
+                    if (inputs[val].checked) {
+                        selected.push(inputs[val].value);
+                    }
+                }
+            }
+        } else if (inputs.checked) {
+            selected.push(inputs.value);
+        }
+        Sfjs.request(
+                form.action,
+                function(xhr) {
+                    // Success
+                    document.getElementById('translationResult').innerHTML = xhr.responseText;
+                },
+                function(xhr) {
+                    // Error
+                    document.getElementById('translationResult').innerHTML = xhr.responseText;
+                },
+                serializeQueryString({selected: selected}),
+                { method: 'POST' }
+        );
+        return false;
+    };
+</script>
+
+{% endmacro %}
+
+{% macro render_table(messages, displaySelect = false) %}
+        <table>
+            <thead>
+            <tr>
+                {% if displaySelect %}
+                    <th>Select</th>
+                {% endif %}
+                <th>Locale</th>
+                <th>Domain</th>
+                <th>Times used</th>
+                <th>Message ID</th>
+                <th>Message Preview</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for message in messages %}
+                <tr>
+                    {% if displaySelect %}
+                        <td>
+                            <input type="checkbox" name="translationKey" value="{{ message.locale ~ message.domain ~ message.id }}">
+                        </td>
+                    {% endif %}
+                    <td class="font-normal text-small">{{ message.locale }}</td>
+                    <td class="font-normal text-small text-bold">{{ message.domain }}</td>
+                    <td class="font-normal text-small">{{ message.count }}</td>
+                    <td>
+                        {{ message.id }}
+
+                        {% if message.transChoiceNumber is not null %}
+                            <small class="newline">(pluralization is used)</small>
+                        {% endif %}
+
+                        {% if message.parameters|length > 0 %}
+                            <button class="btn-link newline text-small sf-toggle" data-toggle-selector="#parameters-{{ loop.index }}" data-toggle-alt-content="Hide parameters">Show parameters</button>
+
+                            <div id="parameters-{{ loop.index }}" class="hidden">
+                                {% for parameters in message.parameters %}
+                                    {{ profiler_dump(parameters) }}
+                                    {% if not loop.last %}<br />{% endif %}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </td>
+                    <td>{{ message.translation }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+{% endmacro %}
